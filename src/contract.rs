@@ -5,7 +5,7 @@ use cw2::set_contract_version;
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{self, ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::state::{State, STATE};
 
 
@@ -95,4 +95,102 @@ pub mod query {
     }
 }
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use cosmwasm_std::testing::{mock_dependencies, mock_env};
+    use cosmwasm_std::{from_json, MessageInfo, Addr};
+    use crate::msg::GetCountResponse;
+
+    #[test]
+    fn proper_initialization() {
+        let mut deps = mock_dependencies();
+
+        let msg = InstantiateMsg { count: 17 };
+        let info = MessageInfo {
+            sender: Addr::unchecked("creator"),
+            funds: vec![],
+        };
+        
+        let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+        assert_eq!(0, res.messages.len());
+
+        let state = query::get_count(deps.as_ref()).unwrap();
+        assert_eq!(17, state.count);
+    }
+    
+
+    #[test]
+    fn increment() {
+        let mut deps = mock_dependencies();
+
+        let msg = InstantiateMsg { count: 17 };
+        let info = MessageInfo {
+            sender: Addr::unchecked("creator"),
+            funds: vec![],
+        };
+        
+        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+
+        let msg = ExecuteMsg::Increment {};
+        let info = MessageInfo {
+            sender: Addr::unchecked("anyone"),
+            funds: vec![],
+        };
+        
+        let _res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+        // assert_eq!(1, res.messages.len());
+
+        let res_query = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
+        let value: GetCountResponse = from_json(res_query).unwrap();
+        assert_eq!(18, value.count);
+    }
+    
+
+    #[test]
+    fn reset_without_permission() {
+        let mut deps = mock_dependencies();
+
+        let msg = InstantiateMsg { count: 17 };
+        let info = MessageInfo {
+            sender: Addr::unchecked("creator"),
+            funds: vec![],
+        };
+        
+        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+
+        let msg = ExecuteMsg::Reset { count: 0 };
+        let info = MessageInfo {
+            sender: Addr::unchecked("not_creator"),
+            funds: vec![],
+        };
+        
+        let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap_err();
+        assert_eq!(ContractError::Unauthorized {}, res);
+    }
+
+    #[test]
+    fn reset_with_permission() {
+        let mut deps = mock_dependencies();
+
+        let msg = InstantiateMsg { count: 17 };
+        let info = MessageInfo {
+            sender: Addr::unchecked("creator"),
+            funds: vec![],
+        };
+        
+        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+
+        let msg = ExecuteMsg::Reset { count: 0 };
+        let info = MessageInfo {
+            sender: Addr::unchecked("creator"),
+            funds: vec![],
+        };
+        
+        let _res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+
+        let res_query = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
+        let value: GetCountResponse = from_json(res_query).unwrap();
+        assert_eq!(0, value.count);
+    }
+
+}
