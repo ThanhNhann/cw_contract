@@ -2,13 +2,20 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 
 #[cw_serde]
 pub struct InstantiateMsg {
-    pub count: i32,
+    pub admin: Option<String>,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    Increment {},
-    Reset { count: i32 },
+    CreatePoll {
+        poll_id: String,
+        question: String,
+        options: Vec<String>,
+    },
+    Vote {
+        poll_id: String,
+        vote: String,
+    }
 }
 
 #[cw_serde]

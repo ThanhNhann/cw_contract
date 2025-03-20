@@ -6,7 +6,7 @@ use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{State, STATE};
+use crate::state::{Config, Poll, Ballot ,CONFIG, POLLS};
 
 
 // version info for migration info
@@ -21,17 +21,20 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    let state = State {
-        count: msg.count,
-        owner: info.sender.clone(),
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+
+    let admin = msg.admin.unwrap_or(info.sender.to_string());
+    let validated_admin = deps.api.addr_validate(&admin)?;
+
+    let config = Config {
+        admin: validated_admin.clone(),
     };
 
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    STATE.save(deps.storage, &state)?;
+    CONFIG.save(deps.storage, &config)?;
+
     Ok(Response::new()
         .add_attribute("method", "instantiate")
-        .add_attribute("owner", info.sender)
-        .add_attribute("count", msg.count.to_string())
+        .add_attribute("admin", validated_admin.to_string())
     )
 }
 
@@ -43,8 +46,8 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Increment {} => execute::increment(deps),
-        ExecuteMsg::Reset { count } => execute::reset(deps, info, count),
+        ExecuteMsg::CreatePoll { poll_id, question, options } => execute::execute_create_poll(deps, info, poll_id, question, options),
+        ExecuteMsg::Vote { poll_id,  vote } => unimplemented!()//execute::reset(deps, info, count),
     }
 }
 
@@ -52,145 +55,101 @@ pub mod execute {
 
     use super::*;
 
-    pub fn increment(deps: DepsMut) -> Result<Response, ContractError> {
-        STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-            state.count += 1;
-            Ok(state)
-        })?;
+    pub fn execute_create_poll(deps: DepsMut, info: MessageInfo,  poll_id: String, question: String, options: Vec<String>) -> Result<Response, ContractError> {
+        if options.len() > 10 {
+            return Err(ContractError::TooManyOptions {});
+        }
 
-        Ok(Response::new().add_attribute("action", "increment"))
-    }
+        let mut opts: Vec<(String, u64)> = Vec::new();
+        let options_clone = options.clone();
 
-    pub fn reset(deps: DepsMut, info: MessageInfo, count: i32) -> Result<Response, ContractError> {
-        STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-            if info.sender != state.owner {
-                return Err(ContractError::Unauthorized {});
-            }
-            state.count = count;
-            Ok(state)
-        })?;
+        for option in options {
+            opts.push((option, 0));
+        }
+
+        let new_poll = Poll {
+            creator: info.sender.clone(),
+            question:  question.clone(),
+            options: opts,
+        };
+
+        POLLS.save(deps.storage, poll_id.clone(), &new_poll)?;
 
         Ok(Response::new()
-            .add_attribute("action", "reset")
-            .add_attribute("count", count.to_string())
+            .add_attribute("action", "create_poll")
+            .add_attribute("poll_id", poll_id)
+            .add_attribute("creator", info.sender.to_string())
+            .add_attribute("question", question)
+            .add_attribute("options", options_clone.join(", "))
         )
     }
+
+    // pub fn reset(deps: DepsMut, info: MessageInfo, count: i32) -> Result<Response, ContractError> {
+    //     STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
+    //         if info.sender != state.owner {
+    //             return Err(ContractError::Unauthorized {});
+    //         }
+    //         state.count = count;
+    //         Ok(state)
+    //     })?;
+
+    //     Ok(Response::new()
+    //         .add_attribute("action", "reset")
+    //         .add_attribute("count", count.to_string())
+    //     )
+    // }
 }
 
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(_deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-    match msg {
-        QueryMsg::GetCount {} => to_json_binary(&query::get_count(_deps)?),
-    }
-}
+// #[cfg_attr(not(feature = "library"), entry_point)]
+// pub fn query(_deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+//     match msg {
+//         QueryMsg::GetCount {} => to_json_binary(&query::get_count(_deps)?),
+//     }
+// }
 
-pub mod query {
-    use crate::msg::GetCountResponse;
+// pub mod query {
+//     use crate::msg::GetCountResponse;
 
-    use super::*;
+//     use super::*;
 
-    pub fn get_count(deps: Deps) -> StdResult<GetCountResponse> {
-        let state = STATE.load(deps.storage)?;
-        Ok(GetCountResponse { count: state.count })
-    }
-}
+//     pub fn get_count(deps: Deps) -> StdResult<GetCountResponse> {
+//         let state = STATE.load(deps.storage)?;
+//         Ok(GetCountResponse { count: state.count })
+//     }
+// }
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use cosmwasm_std::testing::{mock_dependencies, mock_env};
-    use cosmwasm_std::{from_json, MessageInfo, Addr};
-    use crate::msg::GetCountResponse;
+    use cosmwasm_std::{attr, MessageInfo, Addr};
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use crate::contract::instantiate;
+    use crate::msg::InstantiateMsg;
 
     #[test]
-    fn proper_initialization() {
+    fn test_instantiate() {
         let mut deps = mock_dependencies();
-
-        let msg = InstantiateMsg { count: 17 };
+        let env = mock_env();
+        let sender = deps.api.addr_make("sender").to_string();
+        let admin = deps.api.addr_make("admin").to_string();
         let info = MessageInfo {
-            sender: Addr::unchecked("creator"),
+            sender: Addr::unchecked(sender.clone()),
             funds: vec![],
         };
-        
-        let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-        assert_eq!(0, res.messages.len());
 
-        let state = query::get_count(deps.as_ref()).unwrap();
-        assert_eq!(17, state.count);
+        // Test with no admin specified (should use sender as admin)
+        let msg = InstantiateMsg { admin: None };
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![attr("method", "instantiate"), attr("admin", sender)]
+        );
+
+        // Test with specific admin
+        let msg = InstantiateMsg { admin: Some(admin.clone()) };
+        let res = instantiate(deps.as_mut(), env, info, msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![attr("method", "instantiate"), attr("admin", admin)]
+        );
     }
     
-
-    #[test]
-    fn increment() {
-        let mut deps = mock_dependencies();
-
-        let msg = InstantiateMsg { count: 17 };
-        let info = MessageInfo {
-            sender: Addr::unchecked("creator"),
-            funds: vec![],
-        };
-        
-        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-        let msg = ExecuteMsg::Increment {};
-        let info = MessageInfo {
-            sender: Addr::unchecked("anyone"),
-            funds: vec![],
-        };
-        
-        let _res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
-        // assert_eq!(1, res.messages.len());
-
-        let res_query = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-        let value: GetCountResponse = from_json(res_query).unwrap();
-        assert_eq!(18, value.count);
-    }
-    
-
-    #[test]
-    fn reset_without_permission() {
-        let mut deps = mock_dependencies();
-
-        let msg = InstantiateMsg { count: 17 };
-        let info = MessageInfo {
-            sender: Addr::unchecked("creator"),
-            funds: vec![],
-        };
-        
-        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-        let msg = ExecuteMsg::Reset { count: 0 };
-        let info = MessageInfo {
-            sender: Addr::unchecked("not_creator"),
-            funds: vec![],
-        };
-        
-        let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap_err();
-        assert_eq!(ContractError::Unauthorized {}, res);
-    }
-
-    #[test]
-    fn reset_with_permission() {
-        let mut deps = mock_dependencies();
-
-        let msg = InstantiateMsg { count: 17 };
-        let info = MessageInfo {
-            sender: Addr::unchecked("creator"),
-            funds: vec![],
-        };
-        
-        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-        let msg = ExecuteMsg::Reset { count: 0 };
-        let info = MessageInfo {
-            sender: Addr::unchecked("creator"),
-            funds: vec![],
-        };
-        
-        let _res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-        let res_query = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-        let value: GetCountResponse = from_json(res_query).unwrap();
-        assert_eq!(0, value.count);
-    }
-
 }
