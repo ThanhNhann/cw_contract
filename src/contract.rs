@@ -102,11 +102,14 @@ pub mod execute {
                 }
             }
         })?;
-        
-        if let Some((_, count)) = poll.options.iter_mut().find(|(option, _)| option == &vote) {
-            *count += 1;
-            POLLS.save(deps.storage, poll_id.clone(), &poll)?;
-        }
+
+        let vote_position = poll.options.iter()
+            .position(|(option, _)| option == &vote)
+            .ok_or(ContractError::InvalidVote {})?;
+            
+        poll.options[vote_position].1 += 1;
+        POLLS.save(deps.storage, poll_id.clone(), &poll)?;
+
         Ok(Response::new()
             .add_attribute("action", "vote")
             .add_attribute("poll_id", poll_id)
