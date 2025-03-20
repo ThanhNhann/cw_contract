@@ -1,6 +1,6 @@
+use crate::state::{Ballot, Poll};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Addr;
-use crate::state::{Ballot, Poll};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -17,7 +17,7 @@ pub enum ExecuteMsg {
     Vote {
         poll_id: String,
         vote: String,
-    }
+    },
 }
 
 #[cw_serde]
