@@ -139,10 +139,12 @@ pub mod execute {
 #[cfg(test)]
 mod tests {
     use cosmwasm_std::{attr, MessageInfo, Addr};
-    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::testing::{mock_dependencies, mock_env};
     use crate::contract::{instantiate, execute};
     use crate::msg::{InstantiateMsg, ExecuteMsg};
     use crate::error::ContractError;
+    use crate::state::{POLLS};
+
     #[test]
     fn test_instantiate() {
         let mut deps = mock_dependencies();
@@ -207,8 +209,95 @@ mod tests {
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll_msg).unwrap();
         assert_eq!(res.attributes, vec![attr("action", "create_poll"), attr("poll_id", poll_id), attr("creator", sender), attr("question", question), attr("options", "Option 1, Option 2, Option 3")]);
-        
-        
     }
-     
+
+    #[test]
+    fn test_execute_vote_invalid() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let sender = deps.api.addr_make("sender").to_string();
+        let info = MessageInfo {
+            sender: Addr::unchecked(sender.clone()),
+            funds: vec![],
+        };
+
+        let msg = InstantiateMsg { admin: None };
+        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+    
+        let options = vec![("Option 1", 0), ("Option 2", 0), ("Option 3", 0)];
+        let question = "What is the best color?";
+        let poll_id = "poll1";
+        
+        let create_poll_msg = ExecuteMsg::CreatePoll {
+            poll_id: poll_id.to_string(),
+            question: question.to_string(),
+            options: options.iter().map(|(option, _)| option.to_string()).collect(),
+        };
+
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll_msg).unwrap();
+
+        let invalid_vote_msg = ExecuteMsg::Vote {
+            poll_id: "poll2".to_string(),
+            vote: "Option 4".to_string(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), invalid_vote_msg).unwrap_err();
+        assert_eq!(res, ContractError::PollNotFound {poll_id: "poll2".to_string()});
+
+        let invalid_vote2_msg = ExecuteMsg::Vote {
+            poll_id: "poll1".to_string(),
+            vote: "Option 4".to_string(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), invalid_vote2_msg).unwrap_err();
+        assert_eq!(res, ContractError::InvalidVote { });
+    }
+
+    #[test]
+    fn test_execute_vote_valid() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let sender = deps.api.addr_make("sender").to_string();
+        let info = MessageInfo {
+            sender: Addr::unchecked(sender.clone()),
+            funds: vec![],
+        };
+
+        let msg = InstantiateMsg { admin: None };
+        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+    
+        let options = vec![("Option 1", 0), ("Option 2", 0), ("Option 3", 0)];
+        let question = "What is the best color?";
+        let poll_id = "poll1";
+        
+        let create_poll_msg = ExecuteMsg::CreatePoll {
+            poll_id: poll_id.to_string(),
+            question: question.to_string(),
+            options: options.iter().map(|(option, _)| option.to_string()).collect(),
+        };
+
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll_msg).unwrap();
+
+        let vote_msg = ExecuteMsg::Vote {
+            poll_id: poll_id.to_string(),
+            vote: "Option 1".to_string(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![
+                attr("action", "vote"),
+                attr("poll_id", poll_id),
+                attr("voter", sender),
+                attr("vote", "Option 1")
+            ]
+        );
+
+        // Verify the vote was counted
+        let poll = POLLS.load(deps.as_ref().storage, poll_id.to_string()).unwrap();
+        assert_eq!(poll.options[0].1, 1); // Option 1 should have 1 vote
+        assert_eq!(poll.options[1].1, 0); // Option 2 should have 0 votes
+        assert_eq!(poll.options[2].1, 0); // Option 3 should have 0 votes
+    }
 }
