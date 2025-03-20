@@ -140,9 +140,9 @@ pub mod execute {
 mod tests {
     use cosmwasm_std::{attr, MessageInfo, Addr};
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use crate::contract::instantiate;
-    use crate::msg::InstantiateMsg;
-
+    use crate::contract::{instantiate, execute};
+    use crate::msg::{InstantiateMsg, ExecuteMsg};
+    use crate::error::ContractError;
     #[test]
     fn test_instantiate() {
         let mut deps = mock_dependencies();
@@ -170,5 +170,45 @@ mod tests {
             vec![attr("method", "instantiate"), attr("admin", admin)]
         );
     }
+
+    #[test]
+    fn test_execute_create_poll_valid() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let sender = deps.api.addr_make("sender").to_string();
+        let info = MessageInfo {
+            sender: Addr::unchecked(sender.clone()),
+            funds: vec![],
+        };
+
+        let msg = InstantiateMsg { admin: None };
+        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
     
+        let valid_options = vec![("Option 1", 0), ("Option 2", 0), ("Option 3", 0)];
+        let invalid_options = vec![("Option 1", 0), ("Option 2", 0), ("Option 3", 0), ("Option 4", 0), ("Option 5", 0), ("Option 6", 0), ("Option 7", 0), ("Option 8", 0), ("Option 9", 0), ("Option 10", 0), ("Option 11", 0)];
+
+        let question = "What is the best color?";
+        let poll_id = "poll1";
+
+        let create_poll_msg_invalid_len_options = ExecuteMsg::CreatePoll {
+            poll_id: poll_id.to_string(),
+            question: question.to_string(),
+            options: invalid_options.iter().map(|(option, _)| option.to_string()).collect(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll_msg_invalid_len_options).unwrap_err();
+        assert_eq!(res, ContractError::TooManyOptions {});
+
+        let create_poll_msg = ExecuteMsg::CreatePoll {
+            poll_id: poll_id.to_string(),
+            question: question.to_string(),
+            options: valid_options.iter().map(|(option, _)| option.to_string()).collect(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll_msg).unwrap();
+        assert_eq!(res.attributes, vec![attr("action", "create_poll"), attr("poll_id", poll_id), attr("creator", sender), attr("question", question), attr("options", "Option 1, Option 2, Option 3")]);
+        
+        
+    }
+     
 }
