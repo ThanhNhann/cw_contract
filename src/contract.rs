@@ -154,12 +154,14 @@ pub mod query {
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::{attr, MessageInfo, Addr};
+    use cosmwasm_std::{attr, MessageInfo, Addr, from_json};
     use cosmwasm_std::testing::{mock_dependencies, mock_env};
     use crate::contract::{instantiate, execute};
     use crate::msg::{InstantiateMsg, ExecuteMsg};
     use crate::error::ContractError;
-    use crate::state::{POLLS};
+    // use crate::state::{POLLS};
+
+    use super::*;
 
     #[test]
     fn test_instantiate() {
@@ -315,5 +317,116 @@ mod tests {
         assert_eq!(poll.options[0].1, 1); // Option 1 should have 1 vote
         assert_eq!(poll.options[1].1, 0); // Option 2 should have 0 votes
         assert_eq!(poll.options[2].1, 0); // Option 3 should have 0 votes
+    }
+
+    #[test]
+    fn test_query_get_all_polls() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let sender = deps.api.addr_make("sender").to_string();
+        let info = MessageInfo {
+            sender: Addr::unchecked(sender.clone()),
+            funds: vec![],
+        };
+
+        // Test with no poll was created
+        let query_msg = QueryMsg::GetAllPolls {};
+        let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
+        let all_polls: GetAllPollsResponse = from_json(&res).unwrap();
+        assert_eq!(all_polls.polls.len(), 0);
+
+        let msg = InstantiateMsg { admin: None };
+        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+    
+        let create_poll_msg = ExecuteMsg::CreatePoll {
+            poll_id: "poll1".to_string(),
+            question: "What is the best color?".to_string(),
+            options: vec!["Option 1".to_string(), "Option 2".to_string(), "Option 3".to_string()],
+        };
+
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll_msg).unwrap();
+
+        let query_msg = QueryMsg::GetAllPolls {};
+        let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
+        let all_polls: GetAllPollsResponse = from_json(&res).unwrap();
+        assert_eq!(all_polls.polls.len(), 1);
+    }
+    
+    #[test]
+    fn test_query_get_poll() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let sender = deps.api.addr_make("sender").to_string();
+        let info = MessageInfo {
+            sender: Addr::unchecked(sender.clone()),
+            funds: vec![],
+        };
+
+        let msg = InstantiateMsg { admin: None };
+        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap(); 
+    
+        let create_poll_msg = ExecuteMsg::CreatePoll {
+            poll_id: "poll1".to_string(),
+            question: "What is the best color?".to_string(),
+            options: vec!["Option 1".to_string(), "Option 2".to_string(), "Option 3".to_string()],
+        };
+
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll_msg).unwrap();
+
+        let query_msg = QueryMsg::GetPoll { poll_id: "poll1".to_string() };
+        let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
+        let poll: GetPollResponse = from_json(&res).unwrap();
+        assert_eq!(poll.clone().poll.unwrap().question, "What is the best color?");
+        assert_eq!(poll.clone().poll.unwrap().options.len(), 3);
+        assert_eq!(poll.clone().poll.unwrap().options[0].0, "Option 1");
+        assert_eq!(poll.clone().poll.unwrap().options[1].0, "Option 2");
+        assert_eq!(poll.clone().poll.unwrap().options[2].0, "Option 3");
+    }
+
+    #[test]
+    fn test_query_get_user_vote() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let sender = deps.api.addr_make("sender").to_string();
+        let info = MessageInfo {
+            sender: Addr::unchecked(sender.clone()),
+            funds: vec![],
+        };
+
+        let msg = InstantiateMsg { admin: None };
+        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
+        let create_poll_msg = ExecuteMsg::CreatePoll {
+            poll_id: "poll1".to_string(),
+            question: "What is the best color?".to_string(),
+            options: vec!["Option 1".to_string(), "Option 2".to_string(), "Option 3".to_string()],
+        };
+
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll_msg).unwrap();
+        
+        let vote_msg = ExecuteMsg::Vote {
+            poll_id: "poll1".to_string(),
+            vote: "Option 1".to_string(),
+        };
+
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg).unwrap();    
+
+        let query_msg = QueryMsg::GetUserVote {
+            poll_id: "poll1".to_string(),
+            user: Addr::unchecked(sender.clone()),
+        };  
+
+        let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
+        let user_vote: GetUserVoteResponse = from_json(&res).unwrap();
+        assert_eq!(user_vote.vote.unwrap().option, "Option 1");
+
+        let query_msg2 = QueryMsg::GetUserVote {
+            poll_id: "poll1".to_string(),
+            user: Addr::unchecked("other_user".to_string()),
+        };
+
+        let res2 = query(deps.as_ref(), env.clone(), query_msg2).unwrap();
+        let user_vote2: GetUserVoteResponse = from_json(&res2).unwrap();
+        assert!(user_vote2.vote.is_none());
     }
 }
