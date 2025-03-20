@@ -12,4 +12,7 @@ pub enum ContractError {
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
     #[error("Too many options")]
     TooManyOptions {},
+    
+    #[error("Poll not found: {poll_id}")]
+    PollNotFound { poll_id: String },
 }

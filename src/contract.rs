@@ -47,11 +47,13 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::CreatePoll { poll_id, question, options } => execute::execute_create_poll(deps, info, poll_id, question, options),
-        ExecuteMsg::Vote { poll_id,  vote } => unimplemented!()//execute::reset(deps, info, count),
+        ExecuteMsg::Vote { poll_id,  vote } => execute::execute_vote(deps, info, poll_id, vote),
     }
 }
 
 pub mod execute {
+
+    use crate::state::BALLOTS;
 
     use super::*;
 
@@ -84,20 +86,34 @@ pub mod execute {
         )
     }
 
-    // pub fn reset(deps: DepsMut, info: MessageInfo, count: i32) -> Result<Response, ContractError> {
-    //     STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-    //         if info.sender != state.owner {
-    //             return Err(ContractError::Unauthorized {});
-    //         }
-    //         state.count = count;
-    //         Ok(state)
-    //     })?;
+    pub fn execute_vote(deps: DepsMut, info: MessageInfo, poll_id: String, vote: String) -> Result<Response, ContractError> {
+        let mut poll = POLLS.may_load(deps.storage, poll_id.clone())?
+            .ok_or(ContractError::PollNotFound { poll_id: poll_id.clone() })?;
 
-    //     Ok(Response::new()
-    //         .add_attribute("action", "reset")
-    //         .add_attribute("count", count.to_string())
-    //     )
-    // }
+        BALLOTS.update(deps.storage, (info.sender.clone(), poll_id.clone()), |ballot| -> StdResult<Ballot> {
+            match ballot {
+                Some(ballot) => {
+                    let old_position = poll.options.iter().position(|option| option.0 == ballot.option).unwrap();
+                    poll.options[old_position].1 -= 1;
+                    Ok(Ballot { option: vote.clone() })
+                }
+                None => {
+                    Ok(Ballot { option: vote.clone() })
+                }
+            }
+        })?;
+        
+        if let Some((_, count)) = poll.options.iter_mut().find(|(option, _)| option == &vote) {
+            *count += 1;
+            POLLS.save(deps.storage, poll_id.clone(), &poll)?;
+        }
+        Ok(Response::new()
+            .add_attribute("action", "vote")
+            .add_attribute("poll_id", poll_id)
+            .add_attribute("voter", info.sender.to_string())
+            .add_attribute("vote", vote)
+        )
+    }
 }
 
 // #[cfg_attr(not(feature = "library"), entry_point)]
