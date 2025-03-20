@@ -1,4 +1,6 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
+use cosmwasm_std::Addr;
+use crate::state::{Ballot, Poll};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -21,11 +23,25 @@ pub enum ExecuteMsg {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    #[returns(GetCountResponse)]
-    GetCount {},
+    #[returns(GetAllPollsResponse)]
+    GetAllPolls {},
+    #[returns(GetPollResponse)]
+    GetPoll { poll_id: String },
+    #[returns(GetUserVoteResponse)]
+    GetUserVote { user: Addr, poll_id: String },
 }
 
 #[cw_serde]
-pub struct GetCountResponse {
-    pub count: i32,
+pub struct GetAllPollsResponse {
+    pub polls: Vec<Poll>,
+}
+
+#[cw_serde]
+pub struct GetPollResponse {
+    pub poll: Option<Poll>,
+}
+
+#[cw_serde]
+pub struct GetUserVoteResponse {
+    pub vote: Option<Ballot>,
 }

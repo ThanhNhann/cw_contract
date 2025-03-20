@@ -5,8 +5,9 @@ use cw2::set_contract_version;
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{Config, Poll, Ballot ,CONFIG, POLLS};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, GetAllPollsResponse, GetPollResponse, GetUserVoteResponse};
+use crate::state::{Config, Poll, Ballot ,CONFIG, POLLS, BALLOTS};
+use cosmwasm_std::Addr;
 
 
 // version info for migration info
@@ -119,23 +120,38 @@ pub mod execute {
     }
 }
 
-// #[cfg_attr(not(feature = "library"), entry_point)]
-// pub fn query(_deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-//     match msg {
-//         QueryMsg::GetCount {} => to_json_binary(&query::get_count(_deps)?),
-//     }
-// }
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::GetAllPolls {} => to_json_binary(&query::get_all_polls(deps)?),
+        QueryMsg::GetPoll { poll_id } => to_json_binary(&query::get_poll(deps, poll_id)?),
+        QueryMsg::GetUserVote { poll_id, user } => to_json_binary(&query::get_user_vote(deps, poll_id, user)?),
+    }
+}
 
-// pub mod query {
-//     use crate::msg::GetCountResponse;
+pub mod query {
+    use super::*;
 
-//     use super::*;
+    pub fn get_all_polls(deps: Deps) -> StdResult<GetAllPollsResponse> {
+        let polls: Vec<Poll> = POLLS.range(deps.storage, None, None, cosmwasm_std::Order::Ascending)
+            .collect::<StdResult<Vec<_>>>()?
+            .into_iter()
+            .map(|(_, poll)| poll)
+            .collect();
+        Ok(GetAllPollsResponse { polls })
+    }
 
-//     pub fn get_count(deps: Deps) -> StdResult<GetCountResponse> {
-//         let state = STATE.load(deps.storage)?;
-//         Ok(GetCountResponse { count: state.count })
-//     }
-// }
+    pub fn get_poll(deps: Deps, poll_id: String) -> StdResult<GetPollResponse> {
+        let poll = POLLS.load(deps.storage, poll_id)?;
+        Ok(GetPollResponse { poll: Some(poll) })
+    }
+
+    pub fn get_user_vote(deps: Deps, poll_id: String, user: Addr) -> StdResult<GetUserVoteResponse> {
+        let vote = BALLOTS.load(deps.storage, (user, poll_id)).ok();
+        Ok(GetUserVoteResponse { vote: vote})
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use cosmwasm_std::{attr, MessageInfo, Addr};
