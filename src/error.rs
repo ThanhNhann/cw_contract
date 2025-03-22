@@ -18,4 +18,7 @@ pub enum ContractError {
 
     #[error("Invalid vote option")]
     InvalidVote {},
+
+    #[error("Insufficient funds")]
+    InsufficientFunds {},
 }
