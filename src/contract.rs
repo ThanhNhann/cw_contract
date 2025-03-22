@@ -29,6 +29,7 @@ pub fn instantiate(
 
     let config = Config {
         admin: validated_admin.clone(),
+        fee: info.funds[0].clone(),
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -68,6 +69,11 @@ pub mod execute {
         question: String,
         options: Vec<String>,
     ) -> Result<Response, ContractError> {
+        let config = CONFIG.load(deps.storage)?;
+        if info.funds[0].denom != config.fee.denom || info.funds[0].amount < config.fee.amount {
+            return Err(ContractError::InsufficientFunds {});
+        }
+
         if options.len() > 10 {
             return Err(ContractError::TooManyOptions {});
         }
@@ -193,7 +199,7 @@ mod tests {
     use crate::error::ContractError;
     use crate::msg::{ExecuteMsg, InstantiateMsg};
     use cosmwasm_std::testing::{mock_dependencies, mock_env};
-    use cosmwasm_std::{attr, from_json, Addr, MessageInfo};
+    use cosmwasm_std::{attr, from_json, Addr, Coin, MessageInfo, Uint128};
     // use crate::state::{POLLS};
 
     use super::*;
@@ -206,7 +212,10 @@ mod tests {
         let admin = deps.api.addr_make("admin").to_string();
         let info = MessageInfo {
             sender: Addr::unchecked(sender.clone()),
-            funds: vec![],
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(1000u128),
+            }],
         };
 
         // Test with no admin specified (should use sender as admin)
@@ -229,13 +238,24 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_create_poll_valid() {
+    fn test_execute_create_poll() {
         let mut deps = mock_dependencies();
         let env = mock_env();
         let sender = deps.api.addr_make("sender").to_string();
         let info = MessageInfo {
             sender: Addr::unchecked(sender.clone()),
-            funds: vec![],
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(1000u128),
+            }],
+        };
+
+        let insufficient_funds_info = MessageInfo {
+            sender: Addr::unchecked(sender.clone()),
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(100u128),
+            }],
         };
 
         let msg = InstantiateMsg { admin: None };
@@ -259,6 +279,7 @@ mod tests {
         let question = "What is the best color?";
         let poll_id = "poll1";
 
+        // create poll with invalid length of options
         let create_poll_msg_invalid_len_options = ExecuteMsg::CreatePoll {
             poll_id: poll_id.to_string(),
             question: question.to_string(),
@@ -277,6 +298,26 @@ mod tests {
         .unwrap_err();
         assert_eq!(res, ContractError::TooManyOptions {});
 
+        // create poll with insufficient funds
+        let create_poll_msg_invalid_len_options = ExecuteMsg::CreatePoll {
+            poll_id: poll_id.to_string(),
+            question: question.to_string(),
+            options: valid_options
+                .iter()
+                .map(|(option, _)| option.to_string())
+                .collect(),
+        };
+
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            insufficient_funds_info,
+            create_poll_msg_invalid_len_options,
+        )
+        .unwrap_err();
+        assert_eq!(res, ContractError::InsufficientFunds {});
+
+        // create poll with valid
         let create_poll_msg = ExecuteMsg::CreatePoll {
             poll_id: poll_id.to_string(),
             question: question.to_string(),
@@ -306,7 +347,10 @@ mod tests {
         let sender = deps.api.addr_make("sender").to_string();
         let info = MessageInfo {
             sender: Addr::unchecked(sender.clone()),
-            funds: vec![],
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(1000u128),
+            }],
         };
 
         let msg = InstantiateMsg { admin: None };
@@ -356,7 +400,10 @@ mod tests {
         let sender = deps.api.addr_make("sender").to_string();
         let info = MessageInfo {
             sender: Addr::unchecked(sender.clone()),
-            funds: vec![],
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(1000u128),
+            }],
         };
 
         let msg = InstantiateMsg { admin: None };
@@ -407,7 +454,10 @@ mod tests {
         let sender = deps.api.addr_make("sender").to_string();
         let info = MessageInfo {
             sender: Addr::unchecked(sender.clone()),
-            funds: vec![],
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(1000u128),
+            }],
         };
 
         // Test with no poll was created
@@ -444,7 +494,10 @@ mod tests {
         let sender = deps.api.addr_make("sender").to_string();
         let info = MessageInfo {
             sender: Addr::unchecked(sender.clone()),
-            funds: vec![],
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(1000u128),
+            }],
         };
 
         let msg = InstantiateMsg { admin: None };
@@ -484,7 +537,10 @@ mod tests {
         let sender = deps.api.addr_make("sender").to_string();
         let info = MessageInfo {
             sender: Addr::unchecked(sender.clone()),
-            funds: vec![],
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(1000u128),
+            }],
         };
 
         let msg = InstantiateMsg { admin: None };
