@@ -161,10 +161,12 @@ pub mod execute {
         info: MessageInfo,
         poll_id: String,
     ) -> Result<Response, ContractError> {
-
-        let mut poll = POLLS.may_load(deps.storage, &poll_id)?.ok_or(ContractError::PollNotFound {
-            poll_id: poll_id.clone(),
-        })?;
+        let mut poll =
+            POLLS
+                .may_load(deps.storage, &poll_id)?
+                .ok_or(ContractError::PollNotFound {
+                    poll_id: poll_id.clone(),
+                })?;
 
         if info.sender != poll.creator && info.sender != CONFIG.load(deps.storage)?.admin {
             return Err(ContractError::Unauthorized {});
@@ -360,7 +362,8 @@ mod tests {
                 attr("poll_id", poll_id),
                 attr("creator", sender),
                 attr("question", question),
-                attr("options", "Option 1, Option 2, Option 3")
+                attr("options", "Option 1, Option 2, Option 3"),
+                attr("is_active", "true")
             ]
         );
     }
@@ -628,7 +631,9 @@ mod tests {
             funds: vec![],
         };
 
-        let msg = InstantiateMsg { admin: Some(admin.clone()) };
+        let msg = InstantiateMsg {
+            admin: Some(admin.clone()),
+        };
         let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
 
         // create poll 1
@@ -654,7 +659,7 @@ mod tests {
             ]
         );
 
-        // create poll 2 
+        // create poll 2
         let create_poll2_msg = ExecuteMsg::CreatePoll {
             poll_id: "poll2".to_string(),
             question: "What is the best color?".to_string(),
@@ -665,7 +670,7 @@ mod tests {
             ],
         };
 
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll2_msg).unwrap();    
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll2_msg).unwrap();
         assert_eq!(
             res.attributes,
             vec![
@@ -690,11 +695,23 @@ mod tests {
         };
 
         // close poll with an unauthorized user
-        let res = execute(deps.as_mut(), env.clone(), unauthorized_info.clone(), close_poll_msg.clone()).unwrap_err();
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            unauthorized_info.clone(),
+            close_poll_msg.clone(),
+        )
+        .unwrap_err();
         assert_eq!(res, ContractError::Unauthorized {});
 
         // close poll1 with the creator
-        let res = execute(deps.as_mut(), env.clone(), info.clone(), close_poll_msg.clone()).unwrap();
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            close_poll_msg.clone(),
+        )
+        .unwrap();
         assert_eq!(
             res.attributes,
             vec![attr("action", "close_poll"), attr("poll_id", "poll1")]
@@ -705,13 +722,22 @@ mod tests {
         };
         let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
         let poll: GetPollResponse = from_json(&res).unwrap();
-        assert_eq!(poll.poll.unwrap().is_active, false);
+        assert!(!poll.poll.unwrap().is_active);
 
         // close poll2 with the admin
         let close_poll2_msg = ExecuteMsg::ClosePoll {
             poll_id: "poll2".to_string(),
         };
-        let res = execute(deps.as_mut(), env.clone(), MessageInfo { sender: Addr::unchecked(admin.clone()), funds: vec![], }, close_poll2_msg).unwrap();
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            MessageInfo {
+                sender: Addr::unchecked(admin.clone()),
+                funds: vec![],
+            },
+            close_poll2_msg,
+        )
+        .unwrap();
         assert_eq!(
             res.attributes,
             vec![attr("action", "close_poll"), attr("poll_id", "poll2")]
@@ -722,6 +748,6 @@ mod tests {
         };
         let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
         let poll: GetPollResponse = from_json(&res).unwrap();
-        assert_eq!(poll.poll.unwrap().is_active, false);
+        assert!(!poll.poll.unwrap().is_active);
     }
 }
