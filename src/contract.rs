@@ -53,6 +53,7 @@ pub fn execute(
             options,
         } => execute::execute_create_poll(deps, info, poll_id, question, options),
         ExecuteMsg::Vote { poll_id, vote } => execute::execute_vote(deps, info, poll_id, vote),
+        ExecuteMsg::ClosePoll { poll_id } => execute::execute_close_poll(deps, info, poll_id),
     }
 }
 
@@ -89,6 +90,7 @@ pub mod execute {
             creator: info.sender.clone(),
             question: question.clone(),
             options: opts,
+            is_active: true,
         };
 
         POLLS.save(deps.storage, &poll_id, &new_poll)?;
@@ -98,7 +100,8 @@ pub mod execute {
             .add_attribute("poll_id", poll_id)
             .add_attribute("creator", info.sender.to_string())
             .add_attribute("question", question)
-            .add_attribute("options", options_clone.join(", ")))
+            .add_attribute("options", options_clone.join(", "))
+            .add_attribute("is_active", "true"))
     }
 
     pub fn execute_vote(
@@ -151,6 +154,28 @@ pub mod execute {
             .add_attribute("poll_id", poll_id)
             .add_attribute("voter", info.sender.to_string())
             .add_attribute("vote", vote))
+    }
+
+    pub fn execute_close_poll(
+        deps: DepsMut,
+        info: MessageInfo,
+        poll_id: String,
+    ) -> Result<Response, ContractError> {
+
+        let mut poll = POLLS.may_load(deps.storage, &poll_id)?.ok_or(ContractError::PollNotFound {
+            poll_id: poll_id.clone(),
+        })?;
+
+        if info.sender != poll.creator && info.sender != CONFIG.load(deps.storage)?.admin {
+            return Err(ContractError::Unauthorized {});
+        }
+
+        poll.is_active = false;
+        POLLS.save(deps.storage, &poll_id, &poll)?;
+
+        Ok(Response::new()
+            .add_attribute("action", "close_poll")
+            .add_attribute("poll_id", poll_id))
     }
 }
 
@@ -582,5 +607,121 @@ mod tests {
         let res2 = query(deps.as_ref(), env.clone(), query_msg2).unwrap();
         let user_vote2: GetUserVoteResponse = from_json(&res2).unwrap();
         assert!(user_vote2.vote.is_none());
+    }
+
+    #[test]
+    fn test_execute_close_poll() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+        let sender = deps.api.addr_make("sender").to_string();
+        let admin = deps.api.addr_make("admin").to_string();
+        let info = MessageInfo {
+            sender: Addr::unchecked(sender.clone()),
+            funds: vec![Coin {
+                denom: "uatom".to_string(),
+                amount: Uint128::from(1000u128),
+            }],
+        };
+
+        let unauthorized_info = MessageInfo {
+            sender: Addr::unchecked("unauthorized".to_string()),
+            funds: vec![],
+        };
+
+        let msg = InstantiateMsg { admin: Some(admin.clone()) };
+        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
+        // create poll 1
+        let create_poll1_msg = ExecuteMsg::CreatePoll {
+            poll_id: "poll1".to_string(),
+            question: "What is the best color?".to_string(),
+            options: vec![
+                "Option 1".to_string(),
+                "Option 2".to_string(),
+                "Option 3".to_string(),
+            ],
+        };
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll1_msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![
+                attr("action", "create_poll"),
+                attr("poll_id", "poll1"),
+                attr("creator", &sender),
+                attr("question", "What is the best color?"),
+                attr("options", "Option 1, Option 2, Option 3"),
+                attr("is_active", "true")
+            ]
+        );
+
+        // create poll 2 
+        let create_poll2_msg = ExecuteMsg::CreatePoll {
+            poll_id: "poll2".to_string(),
+            question: "What is the best color?".to_string(),
+            options: vec![
+                "Option 1".to_string(),
+                "Option 2".to_string(),
+                "Option 3".to_string(),
+            ],
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), create_poll2_msg).unwrap();    
+        assert_eq!(
+            res.attributes,
+            vec![
+                attr("action", "create_poll"),
+                attr("poll_id", "poll2"),
+                attr("creator", &sender),
+                attr("question", "What is the best color?"),
+                attr("options", "Option 1, Option 2, Option 3"),
+                attr("is_active", "true")
+            ]
+        );
+
+        // query all polls
+        let query_msg = QueryMsg::GetAllPolls {};
+        let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
+        let all_polls: GetAllPollsResponse = from_json(&res).unwrap();
+        assert_eq!(all_polls.polls.len(), 2);
+
+        // testing close polls
+        let close_poll_msg = ExecuteMsg::ClosePoll {
+            poll_id: "poll1".to_string(),
+        };
+
+        // close poll with an unauthorized user
+        let res = execute(deps.as_mut(), env.clone(), unauthorized_info.clone(), close_poll_msg.clone()).unwrap_err();
+        assert_eq!(res, ContractError::Unauthorized {});
+
+        // close poll1 with the creator
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), close_poll_msg.clone()).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![attr("action", "close_poll"), attr("poll_id", "poll1")]
+        );
+
+        let query_msg = QueryMsg::GetPoll {
+            poll_id: "poll1".to_string(),
+        };
+        let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
+        let poll: GetPollResponse = from_json(&res).unwrap();
+        assert_eq!(poll.poll.unwrap().is_active, false);
+
+        // close poll2 with the admin
+        let close_poll2_msg = ExecuteMsg::ClosePoll {
+            poll_id: "poll2".to_string(),
+        };
+        let res = execute(deps.as_mut(), env.clone(), MessageInfo { sender: Addr::unchecked(admin.clone()), funds: vec![], }, close_poll2_msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![attr("action", "close_poll"), attr("poll_id", "poll2")]
+        );
+
+        let query_msg = QueryMsg::GetPoll {
+            poll_id: "poll2".to_string(),
+        };
+        let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
+        let poll: GetPollResponse = from_json(&res).unwrap();
+        assert_eq!(poll.poll.unwrap().is_active, false);
     }
 }
