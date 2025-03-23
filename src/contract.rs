@@ -117,6 +117,10 @@ pub mod execute {
                     poll_id: poll_id.clone(),
                 })?;
 
+        if !poll.is_active {
+            return Err(ContractError::PollClosed { poll_id });
+        }
+
         BALLOTS.update(
             deps.storage,
             (info.sender.clone(), &poll_id),
@@ -749,5 +753,18 @@ mod tests {
         let res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
         let poll: GetPollResponse = from_json(&res).unwrap();
         assert!(!poll.poll.unwrap().is_active);
+
+        let vote_msg = ExecuteMsg::Vote {
+            poll_id: "poll1".to_string(),
+            vote: "Option 1".to_string(),
+        };
+
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), vote_msg).unwrap_err();
+        assert_eq!(
+            res,
+            ContractError::PollClosed {
+                poll_id: "poll1".to_string()
+            }
+        );
     }
 }
