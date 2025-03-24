@@ -1,6 +1,8 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_json_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult};
+use cosmwasm_std::{
+    to_json_binary, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
+};
 use cw2::set_contract_version;
 // use cw2::set_contract_version;
 
@@ -176,10 +178,17 @@ pub mod execute {
             return Err(ContractError::Unauthorized {});
         }
 
+        let config = CONFIG.load(deps.storage)?;
         poll.is_active = false;
         POLLS.save(deps.storage, &poll_id, &poll)?;
 
+        let bank_msg = BankMsg::Send {
+            to_address: poll.creator.to_string(),
+            amount: vec![config.fee],
+        };
+
         Ok(Response::new()
+            .add_message(bank_msg)
             .add_attribute("action", "close_poll")
             .add_attribute("poll_id", poll_id))
     }
@@ -622,12 +631,13 @@ mod tests {
         let env = mock_env();
         let sender = deps.api.addr_make("sender").to_string();
         let admin = deps.api.addr_make("admin").to_string();
+        let fee = Coin {
+            denom: "uatom".to_string(),
+            amount: Uint128::from(1000u128),
+        };
         let info = MessageInfo {
             sender: Addr::unchecked(sender.clone()),
-            funds: vec![Coin {
-                denom: "uatom".to_string(),
-                amount: Uint128::from(1000u128),
-            }],
+            funds: vec![fee.clone()],
         };
 
         let unauthorized_info = MessageInfo {
@@ -721,6 +731,16 @@ mod tests {
             vec![attr("action", "close_poll"), attr("poll_id", "poll1")]
         );
 
+        // Check that the bank message was added to return the fee
+        assert_eq!(res.messages.len(), 1);
+        match &res.messages[0].msg {
+            cosmwasm_std::CosmosMsg::Bank(BankMsg::Send { to_address, amount }) => {
+                assert_eq!(to_address, &sender);
+                assert_eq!(amount, &vec![fee.clone()]);
+            }
+            _ => panic!("Expected BankMsg::Send"),
+        }
+
         let query_msg = QueryMsg::GetPoll {
             poll_id: "poll1".to_string(),
         };
@@ -746,6 +766,16 @@ mod tests {
             res.attributes,
             vec![attr("action", "close_poll"), attr("poll_id", "poll2")]
         );
+
+        // Check that the bank message was added to return the fee
+        assert_eq!(res.messages.len(), 1);
+        match &res.messages[0].msg {
+            cosmwasm_std::CosmosMsg::Bank(BankMsg::Send { to_address, amount }) => {
+                assert_eq!(to_address, &sender);
+                assert_eq!(amount, &vec![fee.clone()]);
+            }
+            _ => panic!("Expected BankMsg::Send"),
+        }
 
         let query_msg = QueryMsg::GetPoll {
             poll_id: "poll2".to_string(),
