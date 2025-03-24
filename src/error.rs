@@ -21,4 +21,7 @@ pub enum ContractError {
 
     #[error("Insufficient funds")]
     InsufficientFunds {},
+
+    #[error("Poll {poll_id} is closed, can not vote")]
+    PollClosed { poll_id: String },
 }

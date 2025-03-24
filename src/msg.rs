@@ -18,6 +18,9 @@ pub enum ExecuteMsg {
         poll_id: String,
         vote: String,
     },
+    ClosePoll {
+        poll_id: String,
+    },
 }
 
 #[cw_serde]
